@@ -61,6 +61,10 @@ def _shutdown_ocr_executor() -> None:
 
 use_gpu = torch.cuda.is_available()
 log.info(f"GPU available: {use_gpu}")
+# Optional flag to clear CUDA cache after each page. Disabled by default.
+CLEAR_CUDA_CACHE_EACH_PAGE = (
+    os.environ.get("CLEAR_CUDA_CACHE_EACH_PAGE", "false").lower() == "true"
+)
 reader = None
 try:
     reader = easyocr.Reader(
@@ -256,7 +260,8 @@ def get_cached_ocr_processor(ocr_reader, ocr_engine):
 def _perform_ocr(ocr_reader, ocr_engine, img_bytes):
     ocr_processor = get_cached_ocr_processor(ocr_reader, ocr_engine)
     text, avg_conf = ocr_processor.perform_ocr(img_bytes)
-    torch.cuda.empty_cache()
+    if CLEAR_CUDA_CACHE_EACH_PAGE and use_gpu:
+        torch.cuda.empty_cache()
     gc.collect()
     return text, avg_conf
 
@@ -384,7 +389,7 @@ def ocr_pdf_fallback(
                                 save_checkpoint(checkpoint_path, processed_pages)
                             del img_bytes
                             gc.collect()
-                            if use_gpu:
+                            if CLEAR_CUDA_CACHE_EACH_PAGE and use_gpu:
                                 torch.cuda.empty_cache()
                     except RuntimeError as e:
                         if "CUDA out of memory" in str(e):
@@ -392,7 +397,8 @@ def ocr_pdf_fallback(
                                 "Reducing batch size due to CUDA out of memory."
                             )
                             batch_size = max(1, batch_size // 2)
-                            torch.cuda.empty_cache()
+                            if use_gpu:
+                                torch.cuda.empty_cache()
                             continue
                         else:
                             log.error(f"OCR failed for batch {page_nums}: {str(e)}")
@@ -401,8 +407,9 @@ def ocr_pdf_fallback(
                     if mem.percent > 80:
                         log.warning("High memory usage detected. Reducing batch size.")
                         batch_size = max(1, batch_size // 2)
-                        torch.cuda.empty_cache()
-                if use_gpu:
+                        if CLEAR_CUDA_CACHE_EACH_PAGE and use_gpu:
+                            torch.cuda.empty_cache()
+                if CLEAR_CUDA_CACHE_EACH_PAGE and use_gpu:
                     torch.cuda.empty_cache()
                 log.debug(
                     f"Batch {page_nums} processed in {time.time() - batch_time_start:.2f} seconds"
