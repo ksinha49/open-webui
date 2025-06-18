@@ -72,14 +72,12 @@ def get_checkpoint_path(file_path):
 # ENH_END: AMER-ENH2
 
 # ENH_START: AMER-ENH2 - Modified to return a tuple (page number, image bytes in PNG format)
-def extract_image_from_each_page_threaded(page_num, pdf_path, dpi=DPI):
+def extract_image_from_page(page_num, pdf_document, dpi=DPI):
+    """Return (page_num, image_bytes) for the specified page."""
     try:
-        pdf_document = fitz.open(pdf_path)
         page = pdf_document.load_page(page_num)
         matrix = fitz.Matrix(dpi / 72, dpi / 72)
         pix = page.get_pixmap(matrix=matrix)
-        pdf_document.close()
-        # Convert to PNG bytes to retain image format
         image_bytes = pix.tobytes("png")
         return (page_num, image_bytes)
     except Exception as e:
@@ -88,17 +86,12 @@ def extract_image_from_each_page_threaded(page_num, pdf_path, dpi=DPI):
 # ENH_END: AMER-ENH2
 
 # ENH_START: AMER-ENH2 - Adjusted to collect (page number, image bytes) tuples
-def extract_images_from_pages_threaded(page_nums, pdf_path, dpi=DPI):
+def extract_images_from_pages(pdf_document, page_nums, dpi=DPI):
     images = []
-    try:
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = {executor.submit(extract_image_from_each_page_threaded, page_num, pdf_path, dpi): page_num for page_num in page_nums}
-            for future in futures:
-                result = future.result()
-                if result and result[1] is not None:
-                    images.append(result)  # result is a tuple (page_number, image_bytes)
-    except Exception as e:
-        log.error(f"Error in batch extraction for pages {page_nums}: {str(e)}")
+    for page_num in page_nums:
+        result = extract_image_from_page(page_num, pdf_document, dpi)
+        if result and result[1] is not None:
+            images.append(result)
     return images
 # ENH_END: AMER-ENH2
 
@@ -302,28 +295,34 @@ def ocr_pdf_fallback(pdf_path, ocr_reader, ocr_engine="easyocr", batch_size=BATC
                 if not page_nums:
                     continue
                 log.debug(f"Processing batch: {page_nums}")
-                images = extract_images_from_pages_threaded(page_nums, pdf_path, dpi)
+                images = extract_images_from_pages(pdf_document, page_nums, dpi)
                 if images:
                     try:
-                        for (page_num, img_bytes) in images:
-                            if img_bytes is None:
-                                continue
-                            text, avg_conf = _perform_ocr(ocr_reader, ocr_engine, img_bytes)
-                            if text:
-                                # Post-process the OCR text.
-                                text = post_process_text(text)
-                                # Convert text to Markdown format including page number and image
-                                text = convert_to_markdown(text, page_num, img_bytes)
-                                # Include page number, image format and confidence score in metadata
-                                doc_metadata = {
-                                    "page_number": page_num,
-                                    "image_format": "png",
-                                    "average_confidence": avg_conf
-                                }
-                                document = Document(page_content=text, metadata=doc_metadata)
-                                extracted_docs.append(document)
-                                processed_pages.append(page_num)
-                                save_checkpoint(checkpoint_path, processed_pages)
+                        with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as exec_ocr:
+                            future_to_page = {
+                                exec_ocr.submit(_perform_ocr, ocr_reader, ocr_engine, img_bytes): (page_num, img_bytes)
+                                for page_num, img_bytes in images
+                            }
+                            for future in future_to_page:
+                                page_num, img_bytes = future_to_page[future]
+                                if img_bytes is None:
+                                    continue
+                                text, avg_conf = future.result()
+                                if text:
+                                    text = post_process_text(text)
+                                    text = convert_to_markdown(text, page_num, img_bytes)
+                                    doc_metadata = {
+                                        "page_number": page_num,
+                                        "image_format": "png",
+                                        "average_confidence": avg_conf,
+                                    }
+                                    extracted_docs.append(Document(page_content=text, metadata=doc_metadata))
+                                    processed_pages.append(page_num)
+                                    save_checkpoint(checkpoint_path, processed_pages)
+                                del img_bytes
+                                gc.collect()
+                                if use_gpu:
+                                    torch.cuda.empty_cache()
                     except RuntimeError as e:
                         if "CUDA out of memory" in str(e):
                             log.warning("Reducing batch size due to CUDA out of memory.")
