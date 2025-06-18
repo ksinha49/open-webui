@@ -93,10 +93,13 @@ known_source_ext = [
 
 
 class TikaLoader:
-    def __init__(self, url, file_path, mime_type=None):
+    def __init__(self, url, file_path, mime_type=None, extract_images=None):
         self.url = url
         self.file_path = file_path
         self.mime_type = mime_type
+
+        # Whether to ask Tika to extract inline images from PDFs
+        self.extract_images = extract_images
 
     def load(self) -> list[Document]:
         with open(self.file_path, "rb") as f:
@@ -106,6 +109,9 @@ class TikaLoader:
             headers = {"Content-Type": self.mime_type}
         else:
             headers = {}
+
+        if self.extract_images:
+            headers["X-Tika-PDFextractInlineImages"] = "true"
 
         endpoint = self.url
         if not endpoint.endswith("/"):
@@ -185,19 +191,30 @@ class Loader:
         loader = self._get_loader(filename, file_content_type, file_path)
         try:
             docs = loader.load()
-            # MOD: AMER-ENH - Added async OCR fallback for PDF files.
+            # Skip OCR fallback if PDF_EXTRACT_IMAGES is enabled
             if filename.lower().endswith('.pdf'):
                 if not docs or all(not doc.page_content.strip() for doc in docs):
-                    log.warning("PyPDFLoader returned empty content for PDF. Falling back to OCR.")
-                    docs = asyncio.run(async_ocr_pdf_fallback(file_path, self.kwargs.get("OCR_READER")))
+                    if not self.kwargs.get("PDF_EXTRACT_IMAGES"):
+                        log.warning("PyPDFLoader returned empty content for PDF. Falling back to OCR.")
+                        docs = asyncio.run(
+                            async_ocr_pdf_fallback(file_path, self.kwargs.get("OCR_READER"))
+                        )
             # MOD: AMER-ENH - Added async OCR processing for image files.
             elif any(filename.lower().endswith(ext) for ext in ["jpg", "jpeg", "png", "tiff", "bmp", "gif"]):
                 log.info("Processing image file for OCR extraction.")
                 docs = asyncio.run(async_ocr_image(file_path, self.kwargs.get("OCR_READER")))
         except Exception as e:
             if filename.lower().endswith('.pdf'):
-                log.error(f"PyPDFLoader raised an exception for PDF: {str(e)}. Trying OCR fallback...")
-                docs = asyncio.run(async_ocr_pdf_fallback(file_path, self.kwargs.get("OCR_READER")))
+                if not self.kwargs.get("PDF_EXTRACT_IMAGES"):
+                    log.error(
+                        f"PyPDFLoader raised an exception for PDF: {str(e)}. Trying OCR fallback..."
+                    )
+                    docs = asyncio.run(
+                        async_ocr_pdf_fallback(file_path, self.kwargs.get("OCR_READER"))
+                    )
+                else:
+                    log.error(f"PyPDFLoader raised an exception for PDF: {str(e)}")
+                    raise e
             elif any(filename.lower().endswith(ext) for ext in ["jpg", "jpeg", "png", "tiff", "bmp", "gif"]):
                 log.error(f"Error processing image for OCR: {str(e)}")
                 docs = asyncio.run(async_ocr_image(file_path, self.kwargs.get("OCR_READER")))
@@ -225,6 +242,7 @@ class Loader:
                     url=self.kwargs.get("TIKA_SERVER_URL"),
                     file_path=file_path,
                     mime_type=file_content_type,
+                    extract_images=self.kwargs.get("PDF_EXTRACT_IMAGES"),
                 )
         elif self.engine == "docling" and self.kwargs.get("DOCLING_SERVER_URL"):
             loader = DoclingLoader(
