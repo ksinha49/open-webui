@@ -48,6 +48,10 @@ image_ext = ["jpg", "jpeg", "png", "tiff", "bmp", "gif"]
 # Global thread pool for OCR tasks
 OCR_EXECUTOR = ThreadPoolExecutor(max_workers=os.cpu_count())
 
+# Limit concurrent OCR tasks to avoid overwhelming resources
+OCR_CONCURRENCY = int(os.getenv("OCR_CONCURRENCY", 2))
+OCR_SEMAPHORE = asyncio.Semaphore(OCR_CONCURRENCY)
+
 # Lock to serialize access to EasyOCR reader.readtext() which is not
 # thread-safe when shared across workers.
 READTEXT_LOCK = threading.Lock()
@@ -468,18 +472,20 @@ def ocr_image(image_path, ocr_reader, ocr_engine="easyocr"):
 async def async_ocr_pdf_fallback(
     pdf_path, ocr_reader, ocr_engine="easyocr", batch_size=BATCH_SIZE, dpi=DPI
 ):
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        None, ocr_pdf_fallback, pdf_path, ocr_reader, ocr_engine, batch_size, dpi
-    )
+    async with OCR_SEMAPHORE:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, ocr_pdf_fallback, pdf_path, ocr_reader, ocr_engine, batch_size, dpi
+        )
     return result
 
 
 async def async_ocr_image(image_path, ocr_reader, ocr_engine="easyocr"):
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        None, ocr_image, image_path, ocr_reader, ocr_engine
-    )
+    async with OCR_SEMAPHORE:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, ocr_image, image_path, ocr_reader, ocr_engine
+        )
     return result
 
 
