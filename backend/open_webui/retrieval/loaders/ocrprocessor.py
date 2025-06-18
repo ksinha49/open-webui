@@ -8,7 +8,13 @@ Modification Log:
 |            |                |                    | Added async wrappers for OCR functions                   |
 | 2025-04-05 | AAK7S          | AMER-ENH3           | Integrated layout-aware OCR processing into OCRProcessor   |
 | 2025-04-06 | AAK7S          | CONF-ADD           | Added confidence score to metadata and preserved line breaks in OCR text |
+| 2025-05-06 | codex          | THRD-LOCK         | Protected reader.readtext with a threading.Lock |
 """
+
+# The global EasyOCR reader instance is shared between threads. Since
+# EasyOCR's `readtext` method is not inherently thread-safe, a module-level
+# lock (`READTEXT_LOCK`) is used to serialize access when `ThreadPoolExecutor`
+# workers invoke OCR in parallel.
 
 import pymupdf as fitz  # PyMuPDF
 import easyocr  # EasyOCR for fallback OCR extraction
@@ -16,6 +22,7 @@ import torch
 from PIL import Image
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
+import threading
 import gc
 import numpy as np  # For image processing
 import psutil  # For monitoring system memory
@@ -40,6 +47,10 @@ image_ext = ["jpg", "jpeg", "png", "tiff", "bmp", "gif"]
 
 # Global thread pool for OCR tasks
 OCR_EXECUTOR = ThreadPoolExecutor(max_workers=os.cpu_count())
+
+# Lock to serialize access to EasyOCR reader.readtext() which is not
+# thread-safe when shared across workers.
+READTEXT_LOCK = threading.Lock()
 
 
 # Ensure the executor shuts down when the application exits
@@ -193,7 +204,10 @@ class OCRProcessor:
                 self.flatten_rnn_parameters(self.ocr_reader.model)
             if isinstance(self.ocr_reader, easyocr.Reader):
                 # Get detailed OCR results (including bounding box and confidence)
-                ocr_results = self.ocr_reader.readtext(img_input)
+                # reader.readtext() is not inherently thread-safe when sharing a
+                # single Reader instance. Use a lock to protect concurrent calls.
+                with READTEXT_LOCK:
+                    ocr_results = self.ocr_reader.readtext(img_input)
                 # Use layout-aware processing to convert the OCR results into Markdown format
                 text, avg_conf = layout_to_markdown(ocr_results)
                 return text, avg_conf
