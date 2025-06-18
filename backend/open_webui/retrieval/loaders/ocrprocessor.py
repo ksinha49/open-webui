@@ -433,10 +433,10 @@ def ocr_image(image_path, ocr_reader, ocr_engine="easyocr"):
             img = img.convert("RGB")
             max_size = (2000, 2000)
             img.thumbnail(max_size, Image.LANCZOS)
-            buffer = BytesIO()
             # Save image as PNG to standardize the OCR input while retaining original format info
-            img.save(buffer, format="PNG")
-            img_bytes = buffer.getvalue()
+            with BytesIO() as buffer:
+                img.save(buffer, format="PNG")
+                img_bytes = buffer.getvalue()
             preprocessed_img = preprocess_image_cv2(img_bytes)
             if preprocessed_img is None:
                 return []
