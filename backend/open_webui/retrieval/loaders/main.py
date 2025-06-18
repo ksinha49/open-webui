@@ -3,8 +3,9 @@ Modification Log:
 ------------------
 | Date       | Author         | MOD TAG            | Description       |
 |------------|----------------|--------------------|-------------------|
-| 2024-11-05 | AAK7S          | AMER-ENH           | OCR ENHANCEMENT 
+| 2024-11-05 | AAK7S          | AMER-ENH           | OCR ENHANCEMENT
 """
+
 import requests
 import logging
 import ftfy
@@ -31,7 +32,10 @@ from langchain_core.documents import Document
 from open_webui.env import SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL
 
 # Import OCR functions and async wrappers from the OCR enhancements module
-from open_webui.retrieval.loaders.ocrprocessor import async_ocr_pdf_fallback, async_ocr_image
+from open_webui.retrieval.loaders.ocrprocessor import (
+    async_ocr_pdf_fallback,
+    async_ocr_image,
+)
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
@@ -192,19 +196,28 @@ class Loader:
         try:
             docs = loader.load()
             # Skip OCR fallback if PDF_EXTRACT_IMAGES is enabled
-            if filename.lower().endswith('.pdf'):
+            if filename.lower().endswith(".pdf"):
                 if not docs or all(not doc.page_content.strip() for doc in docs):
                     if not self.kwargs.get("PDF_EXTRACT_IMAGES"):
-                        log.warning("PyPDFLoader returned empty content for PDF. Falling back to OCR.")
+                        log.warning(
+                            "PyPDFLoader returned empty content for PDF. Falling back to OCR."
+                        )
                         docs = asyncio.run(
-                            async_ocr_pdf_fallback(file_path, self.kwargs.get("OCR_READER"))
+                            async_ocr_pdf_fallback(
+                                file_path, self.kwargs.get("OCR_READER")
+                            )
                         )
             # MOD: AMER-ENH - Added async OCR processing for image files.
-            elif any(filename.lower().endswith(ext) for ext in ["jpg", "jpeg", "png", "tiff", "bmp", "gif"]):
+            elif any(
+                filename.lower().endswith(ext)
+                for ext in ["jpg", "jpeg", "png", "tiff", "bmp", "gif"]
+            ):
                 log.info("Processing image file for OCR extraction.")
-                docs = asyncio.run(async_ocr_image(file_path, self.kwargs.get("OCR_READER")))
+                docs = asyncio.run(
+                    async_ocr_image(file_path, self.kwargs.get("OCR_READER"))
+                )
         except Exception as e:
-            if filename.lower().endswith('.pdf'):
+            if filename.lower().endswith(".pdf"):
                 if not self.kwargs.get("PDF_EXTRACT_IMAGES"):
                     log.error(
                         f"PyPDFLoader raised an exception for PDF: {str(e)}. Trying OCR fallback..."
@@ -215,9 +228,14 @@ class Loader:
                 else:
                     log.error(f"PyPDFLoader raised an exception for PDF: {str(e)}")
                     raise e
-            elif any(filename.lower().endswith(ext) for ext in ["jpg", "jpeg", "png", "tiff", "bmp", "gif"]):
+            elif any(
+                filename.lower().endswith(ext)
+                for ext in ["jpg", "jpeg", "png", "tiff", "bmp", "gif"]
+            ):
                 log.error(f"Error processing image for OCR: {str(e)}")
-                docs = asyncio.run(async_ocr_image(file_path, self.kwargs.get("OCR_READER")))
+                docs = asyncio.run(
+                    async_ocr_image(file_path, self.kwargs.get("OCR_READER"))
+                )
             else:
                 log.error(f"Error while loading document: {str(e)}")
                 raise e
