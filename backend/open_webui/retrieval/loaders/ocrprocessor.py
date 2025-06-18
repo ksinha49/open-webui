@@ -13,7 +13,6 @@ Modification Log:
 import pymupdf as fitz  # PyMuPDF
 import easyocr  # EasyOCR for fallback OCR extraction
 import torch
-import multiprocessing  # For parallel processing
 from PIL import Image
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
@@ -29,6 +28,7 @@ import os
 import logging
 import time  # For timing batch processing
 import asyncio  # ASYNC: AMER-ENH2 For async wrappers
+import atexit
 
 from langchain_core.documents import Document
 from open_webui.env import DPI, BATCH_SIZE, ENV_TMP_DIR, SRC_LOG_LEVELS
@@ -37,6 +37,16 @@ log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["RAG"])
 
 image_ext = ["jpg", "jpeg", "png", "tiff", "bmp", "gif"]
+
+# Global thread pool for OCR tasks
+OCR_EXECUTOR = ThreadPoolExecutor(max_workers=os.cpu_count())
+
+
+# Ensure the executor shuts down when the application exits
+@atexit.register
+def _shutdown_ocr_executor() -> None:
+    OCR_EXECUTOR.shutdown(wait=True)
+
 
 use_gpu = torch.cuda.is_available()
 log.info(f"GPU available: {use_gpu}")
@@ -334,41 +344,34 @@ def ocr_pdf_fallback(
                 images = extract_images_from_pages(pdf_document, page_nums, dpi)
                 if images:
                     try:
-                        with ThreadPoolExecutor(
-                            max_workers=multiprocessing.cpu_count()
-                        ) as exec_ocr:
-                            future_to_page = {
-                                exec_ocr.submit(
-                                    _perform_ocr, ocr_reader, ocr_engine, img_bytes
-                                ): (page_num, img_bytes)
-                                for page_num, img_bytes in images
-                            }
-                            for future in future_to_page:
-                                page_num, img_bytes = future_to_page[future]
-                                if img_bytes is None:
-                                    continue
-                                text, avg_conf = future.result()
-                                if text:
-                                    text = post_process_text(text)
-                                    text = convert_to_markdown(
-                                        text, page_num, img_bytes
-                                    )
-                                    doc_metadata = {
-                                        "page_number": page_num,
-                                        "image_format": "png",
-                                        "average_confidence": avg_conf,
-                                    }
-                                    extracted_docs.append(
-                                        Document(
-                                            page_content=text, metadata=doc_metadata
-                                        )
-                                    )
-                                    processed_pages.append(page_num)
-                                    save_checkpoint(checkpoint_path, processed_pages)
-                                del img_bytes
-                                gc.collect()
-                                if use_gpu:
-                                    torch.cuda.empty_cache()
+                        future_to_page = {
+                            OCR_EXECUTOR.submit(
+                                _perform_ocr, ocr_reader, ocr_engine, img_bytes
+                            ): (page_num, img_bytes)
+                            for page_num, img_bytes in images
+                        }
+                        for future in future_to_page:
+                            page_num, img_bytes = future_to_page[future]
+                            if img_bytes is None:
+                                continue
+                            text, avg_conf = future.result()
+                            if text:
+                                text = post_process_text(text)
+                                text = convert_to_markdown(text, page_num, img_bytes)
+                                doc_metadata = {
+                                    "page_number": page_num,
+                                    "image_format": "png",
+                                    "average_confidence": avg_conf,
+                                }
+                                extracted_docs.append(
+                                    Document(page_content=text, metadata=doc_metadata)
+                                )
+                                processed_pages.append(page_num)
+                                save_checkpoint(checkpoint_path, processed_pages)
+                            del img_bytes
+                            gc.collect()
+                            if use_gpu:
+                                torch.cuda.empty_cache()
                     except RuntimeError as e:
                         if "CUDA out of memory" in str(e):
                             log.warning(
