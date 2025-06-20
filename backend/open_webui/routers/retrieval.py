@@ -38,6 +38,9 @@ from pydantic import BaseModel
 import tiktoken
 from threading import BoundedSemaphore 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import Counter
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
 
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter, TokenTextSplitter
@@ -107,6 +110,13 @@ from open_webui.env import (
 )
 from open_webui.constants import ERROR_MESSAGES
 
+try:
+    STOP_WORDS = set(stopwords.words("english"))
+except LookupError:  # pragma: no cover - download corpus if missing
+    import nltk
+    nltk.download("stopwords")
+    STOP_WORDS = set(stopwords.words("english"))
+
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["RAG"])
 
@@ -145,7 +155,21 @@ def get_dynamic_batch_size(max_size=1000, min_size=10):
         return min_size
 """
 MOD: AMER-HOTFIX-1: End of Mod
-"""       
+"""
+
+def extract_keywords(text: str, top_n: int = 5) -> List[str]:
+    """Simple keyword extractor using NLTK."""
+    try:
+        tokens = [w.lower() for w in word_tokenize(text) if w.isalpha()]
+    except LookupError:  # pragma: no cover - ensure tokenizer downloaded
+        import nltk
+        nltk.download("punkt")
+        tokens = [w.lower() for w in word_tokenize(text) if w.isalpha()]
+
+    tokens = [w for w in tokens if w not in STOP_WORDS]
+    counts = Counter(tokens)
+    return [w for w, _ in counts.most_common(top_n)]
+
 def get_ef(
     engine: str,
     embedding_model: str,
@@ -918,10 +942,13 @@ def save_docs_to_vector_db(
         raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
 
     texts = [doc.page_content for doc in docs]
+    keywords_list = [extract_keywords(t) for t in texts]
     metadatas = [
         {
             **doc.metadata,
             **(metadata if metadata else {}),
+            "chunk_index": idx,
+            "keywords": keywords_list[idx],
             "embedding_config": json.dumps(
                 {
                     "engine": request.app.state.config.RAG_EMBEDDING_ENGINE,
@@ -929,7 +956,7 @@ def save_docs_to_vector_db(
                 }
             ),
         }
-        for doc in docs
+        for idx, doc in enumerate(docs)
     ]
 
     # ChromaDB does not like datetime formats
