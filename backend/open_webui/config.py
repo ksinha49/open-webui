@@ -1789,6 +1789,8 @@ MILVUS_METRIC_TYPE = os.environ.get("MILVUS_METRIC_TYPE", "COSINE")
 MILVUS_HNSW_M = int(os.environ.get("MILVUS_HNSW_M", "16"))
 MILVUS_HNSW_EFCONSTRUCTION = int(os.environ.get("MILVUS_HNSW_EFCONSTRUCTION", "100"))
 MILVUS_IVF_FLAT_NLIST = int(os.environ.get("MILVUS_IVF_FLAT_NLIST", "128"))
+MILVUS_HNSW_SEARCH_EF = int(os.environ.get("MILVUS_HNSW_SEARCH_EF", "50"))
+MILVUS_IVF_FLAT_NPROBE = int(os.environ.get("MILVUS_IVF_FLAT_NPROBE", "10"))
 
 # Qdrant
 QDRANT_URI = os.environ.get("QDRANT_URI", None)
