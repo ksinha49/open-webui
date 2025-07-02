@@ -339,6 +339,7 @@ from open_webui.config import (
     OAUTH_USERNAME_CLAIM,
     OAUTH_ALLOWED_ROLES,
     OAUTH_ADMIN_ROLES,
+    OAUTH_SILENT_LOGIN,
     # WebUI (LDAP)
     ENABLE_LDAP,
     LDAP_SERVER_LABEL,
@@ -1511,7 +1512,8 @@ async def get_app_config(request: Request):
             "providers": {
                 name: config.get("name", name)
                 for name, config in OAUTH_PROVIDERS.items()
-            }
+            },
+            "silent_login": OAUTH_SILENT_LOGIN.value,
         },
         "features": {
             "auth": WEBUI_AUTH,
@@ -1682,8 +1684,8 @@ if len(OAUTH_PROVIDERS) > 0:
 
 
 @app.get("/oauth/{provider}/login")
-async def oauth_login(provider: str, request: Request):
-    return await oauth_manager.handle_login(request, provider)
+async def oauth_login(provider: str, request: Request, silent: bool = False):
+    return await oauth_manager.handle_login(request, provider, silent)
 
 
 # OAuth login logic is as follows:

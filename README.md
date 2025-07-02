@@ -238,6 +238,10 @@ If you are running Open WebUI in an offline environment, you can set the `HF_HUB
 export HF_HUB_OFFLINE=1
 ```
 
+### OAuth Silent Login
+
+Set `OAUTH_SILENT_LOGIN=true` to automatically attempt a silent OAuth login. When enabled, the `/auth` page redirects to `/oauth/oidc/login?silent=true` if no user session is present.
+
 ## What's Next? 🌟
 
 Discover upcoming features on our roadmap in the [Open WebUI Documentation](https://docs.openwebui.com/roadmap/).

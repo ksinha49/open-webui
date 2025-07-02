@@ -35,6 +35,7 @@ from open_webui.config import (
     OAUTH_ADMIN_ROLES,
     OAUTH_ALLOWED_DOMAINS,
     OAUTH_UPDATE_PICTURE_ON_LOGIN,
+    OAUTH_SILENT_LOGIN,
     WEBHOOK_URL,
     JWT_EXPIRES_IN,
     AppConfig,
@@ -75,6 +76,7 @@ auth_manager_config.OAUTH_ALLOWED_DOMAINS = OAUTH_ALLOWED_DOMAINS
 auth_manager_config.WEBHOOK_URL = WEBHOOK_URL
 auth_manager_config.JWT_EXPIRES_IN = JWT_EXPIRES_IN
 auth_manager_config.OAUTH_UPDATE_PICTURE_ON_LOGIN = OAUTH_UPDATE_PICTURE_ON_LOGIN
+auth_manager_config.OAUTH_SILENT_LOGIN = OAUTH_SILENT_LOGIN
 
 
 class OAuthManager:
@@ -330,7 +332,7 @@ class OAuthManager:
             log.error(f"Error processing profile picture '{picture_url}': {e}")
             return "/user.png"
 
-    async def handle_login(self, request, provider):
+    async def handle_login(self, request, provider, silent: bool = False):
         if provider not in OAUTH_PROVIDERS:
             raise HTTPException(404)
         # If the provider has a custom redirect URL, use that, otherwise automatically generate one
@@ -340,7 +342,10 @@ class OAuthManager:
         client = self.get_client(provider)
         if client is None:
             raise HTTPException(404)
-        return await client.authorize_redirect(request, redirect_uri)
+        params = {}
+        if silent:
+            params["prompt"] = "none"
+        return await client.authorize_redirect(request, redirect_uri, **params)
 
     async def handle_callback(self, request, provider, response):
         if provider not in OAUTH_PROVIDERS:

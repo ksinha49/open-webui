@@ -217,11 +217,12 @@ type Config = {
 		enable_autocomplete_generation: boolean;
 		enable_direct_connections: boolean;
 	};
-	oauth: {
-		providers: {
-			[key: string]: string;
-		};
-	};
+        oauth: {
+                providers: {
+                        [key: string]: string;
+                };
+                silent_login?: boolean;
+        };
 	ui?: {
 		pending_user_overlay_title?: string;
 		pending_user_overlay_description?: string;

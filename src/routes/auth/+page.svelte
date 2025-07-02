@@ -137,15 +137,24 @@
 		}
 	}
 
-	onMount(async () => {
-		if ($user !== undefined) {
-			const redirectPath = querystringValue('redirect') || '/';
-			goto(redirectPath);
-		}
-		await checkOauthCallback();
+        onMount(async () => {
+                if ($user !== undefined) {
+                        const redirectPath = querystringValue('redirect') || '/';
+                        goto(redirectPath);
+                }
+                await checkOauthCallback();
 
-		loaded = true;
-		setLogoImage();
+                if (
+                        $config?.oauth?.silent_login === true &&
+                        !$user &&
+                        $config?.oauth?.providers?.oidc
+                ) {
+                        window.location.href = `${WEBUI_BASE_URL}/oauth/oidc/login?silent=true`;
+                        return;
+                }
+
+                loaded = true;
+                setLogoImage();
 
 		if (($config?.features.auth_trusted_header ?? false) || $config?.features.auth === false) {
 			await signInHandler();
