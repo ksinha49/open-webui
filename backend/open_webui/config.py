@@ -529,6 +529,12 @@ OAUTH_UPDATE_PICTURE_ON_LOGIN = PersistentConfig(
     os.environ.get("OAUTH_UPDATE_PICTURE_ON_LOGIN", "False").lower() == "true",
 )
 
+OAUTH_SILENT_LOGIN = PersistentConfig(
+    "OAUTH_SILENT_LOGIN",
+    "oauth.silent_login",
+    os.environ.get("OAUTH_SILENT_LOGIN", "False").lower() == "true",
+)
+
 
 def load_oauth_providers():
     OAUTH_PROVIDERS.clear()
